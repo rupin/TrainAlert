@@ -5,6 +5,12 @@
 #define RS485_DIR_PIN PB1 // Direction Pin for MAX485
 #define SENDING 1
 #define RECIEVING 0
+
+
+#define MASTER_ROLE 1
+#define SLAVE_ROLE 0
+
+
 #define MASTER_RS485_ADDRESS 0
 #define MY_RS485_ADDRESS 1
 #define RS485_PACKET_SIZE 11
@@ -18,6 +24,9 @@
 
 #define PACKET_BYTE_UNSET_VALUE 0 //When data in arrays in unset, it will be this value
 #define DESTINATION_BYTE_INDEX 3 //Index of the bytein the arraywhich points to recipient address
+#define SOURCE_BYTE_INDEX 2 //Index of the bytein the arraywhich points to recipient address
+#define COMMAND_BYTE_INDEX 4 //Index of the bytein the arraywhich points to command
+#define FIRST_DATA_BYTE 5 //Index of the bytein the array which points to FIRST DATA BYTE
 
 
 #define RS485_KEEP_ALIVE 0x01
@@ -46,7 +55,14 @@ class RS485
     uint8_t RS485_SENDING_PAYLOAD [RS485_PACKET_SIZE];
     uint8_t RS485_RECIEVING_PAYLOAD [RS485_PACKET_SIZE];
     HardwareSerial RS485Port = new HardwareSerial(USART3);
+    uint8_t amIAddressed;
+    boolean isMaster=false;
 
+    uint8_t sourceAddress, rs485Command;
+    uint32_t recievedData;
+    
+
+    
 
     uint8_t isThePacketforMe()//check if the destination Address belongs to me
     {
@@ -70,6 +86,16 @@ class RS485
       RS485Port.begin(9600);
       pinMode(RS485_DIR_PIN, OUTPUT);
     }
+    
+    void setMasterSlaveStatus(boolean role)
+    {
+      isMaster=role;
+    }
+
+    boolean getMasterSlaveStatus()
+    {
+      return isMaster;
+    }
 
 
     void setRS485Mode(boolean mode)
@@ -84,21 +110,42 @@ class RS485
       RS485Port.write(RS485_SENDING_PAYLOAD, RS485_PACKET_SIZE); // Serial.write can send the whole array.
     }
 
-    uint8_t recieveRS485Packet()
+    void recieveRS485Packet()
     {
       setRS485Mode(RECIEVING);
-      //It is possible the function call can happen while the packet is in transit. We should only read in data lengths equal to RS485_PACKET_SIZE
-      uint8_t amIAddressed = RECIEVED_DATA_UNSURE; // I dont know if the data is for me or no. I will report I am not sure
+      amIAddressed = RECIEVED_DATA_UNSURE; // I dont know if the data is for me or no. I will report I am not sure
+      
+      //It is possible the function call can happen while the packet is in transit. 
+      //We should only read in data lengths equal to RS485_PACKET_SIZE      
+      
       if (RS485Port.available() == RS485_PACKET_SIZE)
       {
+        
         RS485Port.readBytes(RS485_RECIEVING_PAYLOAD, RS485_PACKET_SIZE);
         amIAddressed = isThePacketforMe(); //Determine if I am the intended recipient or no
       }
 
-      return amIAddressed;
+      if(amIAddressed==RECIEVED_DATA_FOR_ME)//If I am the recipent, better collect the source of the packet, the command and the data.
+      {
+        sourceAddress=RS485_RECIEVING_PAYLOAD[SOURCE_BYTE_INDEX];
+        rs485Command=RS485_RECIEVING_PAYLOAD[COMMAND_BYTE_INDEX];
+        
+        recievedData=0;
+        recievedData=(recievedData | RS485_RECIEVING_PAYLOAD[FIRST_DATA_BYTE]);
+        recievedData=recievedData<<8;
+        
+        recievedData=(recievedData | RS485_RECIEVING_PAYLOAD[FIRST_DATA_BYTE+1]);
+        recievedData=recievedData<<8;
+        
+        recievedData=(recievedData | RS485_RECIEVING_PAYLOAD[FIRST_DATA_BYTE+2]);
+        recievedData=recievedData<<8;
+        
+        recievedData=recievedData | RS485_RECIEVING_PAYLOAD[FIRST_DATA_BYTE+3];       
+        
+      }
     }
 
-    void setRS485PacketByte(uint8_t index, uint8_t value)
+    void setRS485SendingPacketByte(uint8_t index, uint8_t value)
     {
       RS485_SENDING_PAYLOAD[index] = value;
     }
@@ -108,40 +155,65 @@ class RS485
       return RS485_RECIEVING_PAYLOAD[index];
     }
 
-    void resetRS485SendingPacket()
+   
+    uint8_t getAmIAddressed()
+    {
+      return amIAddressed;
+    }
+
+    /*void resetRS485RecievedPacket()
     {
       uint8_t i;
       for (i = 0; i < RS485_PACKET_SIZE; i++)
       {
-        setRS485PacketByte(i, PACKET_BYTE_UNSET_VALUE);
+        setRS485RecievingPacketByte(i, PACKET_BYTE_UNSET_VALUE);
       }
-    }
+    }*/
+
+   
 
     void setSendingArrayData(uint8_t recipientAddress, uint8_t Command, uint32_t data)
     {
+      
       uint8_t maskedByte=0;
-      setRS485PacketByte(0, 0x00);
-      setRS485PacketByte(1, 0x08);
-      setRS485PacketByte(2, MY_RS485_ADDRESS);
-      setRS485PacketByte(3, recipientAddress);
-      setRS485PacketByte(4, Command);
+      setRS485SendingPacketByte(0, 0x00);
+      setRS485SendingPacketByte(1, 0x08);
+      setRS485SendingPacketByte(2, MY_RS485_ADDRESS);
+      setRS485SendingPacketByte(3, recipientAddress);
+      setRS485SendingPacketByte(4, Command);
       
       maskedByte=(uint8_t)(data &0xFF000000)>>24;
-      setRS485PacketByte(5, maskedByte);
+      setRS485SendingPacketByte(5, maskedByte);
       
       maskedByte=(uint8_t)(data &0x00FF0000)>>16;
-      setRS485PacketByte(6, maskedByte);
+      setRS485SendingPacketByte(6, maskedByte);
       
       maskedByte=(uint8_t)(data &0x0000FF00)>>8;
-      setRS485PacketByte(7, maskedByte);
+      setRS485SendingPacketByte(7, maskedByte);
 
-      maskedByte=(uint8_t)(data &0x000000FF);
-      setRS485PacketByte(8, maskedByte);     
+      maskedByte=(uint8_t)(data & 0x000000FF);
+      setRS485SendingPacketByte(8, maskedByte);     
       
      
-      setRS485PacketByte(9, 0x00);
-      setRS485PacketByte(10, 0x00);
+      setRS485SendingPacketByte(9, 0x00);
+      setRS485SendingPacketByte(10, 0x00);
     }
+
+    uint8_t getSourceAddress()
+    {
+      return sourceAddress;
+    }
+    uint8_t getCommand()
+    {
+      return rs485Command;
+    }
+
+    uint32_t getData()
+    {
+      return recievedData;
+    }
+    
+    
 
 
 

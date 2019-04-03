@@ -1,141 +1,104 @@
 
 #include "RS485Lib.cpp"
+#include <TaskScheduler.h>
+#include "LightController.cpp"
+#include "PresenceSensor.cpp"
 
 
-#define LED_COUNT 4
-#define PIR_COUNT 4
 #define ALARM_PIN PB14
 #define MASTER_SLAVE_PIN PA0
+#define LEDSequencePeriod 125
+#define SensorCheckPeriod 1000
+#define RS485CommandCheckPeriod 5000
+#define RS485CommandSendPeriod 1000
 
-int LED_PINS[4] = {PB4, PB3, PA15, PA8};
-int PIR_PINS[4] = {PB9, PB8, PB13, PB12};
-byte pirStatus = 0;
-byte loopIndex = 0;
-byte LEDSequenceIndex = 0;
-byte stayOnFor = 20000; // Stay on for 20 seconds once triggered.
-long int startedSince = 0;
-bool debugLEDstate = true;
-boolean lightsOn = false;
-boolean masterDevice = false;
+//Task List
+void f_EvaluateSensor();
+void f_LEDExecuteOnSensor();
+void f_RS485_CommandCheck();
+void f_RS485_CommandSend();
 
-boolean humanDetected = false;
-boolean trainDetected = false;
-int waitTime = 125;
-long int timeElapsed = 0;
+Task t_SensorCheck(1000, TASK_FOREVER, &f_EvaluateSensor); //Run check every Second
+Task t_RunLED(125, TASK_FOREVER, &f_LEDExecuteOnSensor);//run every 125 ms
+Task t_RS485_Recieved_Command_Check(RS485CommandCheckPeriod, TASK_FOREVER, &f_RS485_CommandCheck);
+Task t_RS485_Send_Command(RS485CommandCheckPeriod, TASK_FOREVER, &f_RS485_CommandSend);
+
+Scheduler runner;
+
+boolean role = false;
+
+
+RS485 myRS485;
+LightController myLightController;
+PresenceSensor myPresenceSensor;
+
 
 
 void setup() {
 
-  for (loopIndex = 0; loopIndex < LED_COUNT; loopIndex++)
-  {
-    pinMode(LED_PINS[loopIndex], OUTPUT);
-  }
-  for (loopIndex = 0; loopIndex < PIR_COUNT; loopIndex++)
-  {
-    // The sensor reports a High active state, but sometimes the output can float. Let us set it to a low state.
-    pinMode(PIR_PINS[loopIndex], INPUT_PULLUP);
-  }
-  pinMode(LED_BUILTIN, OUTPUT);
   pinMode(MASTER_SLAVE_PIN, INPUT);
   Serial.begin(115200);
-  timeElapsed = millis();
-
-
   pinMode(ALARM_PIN, OUTPUT);
+  role = digitalRead(MASTER_SLAVE_PIN);
+  myRS485.setMasterSlaveStatus(role);
 
-  digitalWrite(LED_BUILTIN, HIGH);
+  runner.addTask(t_SensorCheck);
+  t_SensorCheck.enable();
 
-  masterDevice = digitalRead(MASTER_SLAVE_PIN);
-  if (!masterDevice)
+
+  runner.addTask(t_RunLED);
+  t_RunLED.enable();
+
+
+  runner.addTask(t_RS485_Recieved_Command_Check);
+  t_RunLED.enable();
+  runner.addTask(t_RS485_Send_Command);
+
+
+
+}
+
+
+
+void loop()
+{
+  /*myRS485.resetRS485SendingPacket();
+    myRS485.setSendingArrayData(0,RS485_KEEP_ALIVE,0);
+    myRS485.sendRS485Packet();*/
+  runner.execute();
+}
+
+void f_EvaluateSensor()
+{
+  myPresenceSensor.evaluateSensorState();
+}
+
+
+void f_LEDExecuteOnSensor()
+{
+  if (myPresenceSensor.getHumanDetected())
   {
-    Serial.print ("I am a Slave Device with Address: ");
-    Serial.println(MY_RS485_ADDRESS);
+    myLightController.turnOnLED();
   }
   else
   {
-    Serial.print ("I am a Master Device with Address: ");
-    Serial.println(0);
+    myLightController.shutDownLights();
   }
+
 }
-
-//void loop() {
-//
-//  humanDetected = false; //Set this to false to avoid accidental retriggering
-//  pirStatus = 0; //Reset the Variable to correct initial State.
-//  for (loopIndex = 0; loopIndex < PIR_COUNT; loopIndex++)
-//  {
-//    byte state = digitalRead(PIR_PINS[loopIndex]); //digital read returns value 0(0b00000000) or 1(0b00000001)
-//    /*Shift the LSB up, based on the sensor index, append 0 on LSB.
-//      OR operation just sets the bit which corresponds to the sensor index*/
-//
-//    pirStatus = pirStatus | (state << loopIndex);
-//  }
-//  pirStatus = 1;
-//  //Serial.print("PIR Status:");
-//  //Serial.println(pirStatus);
-//  if (pirStatus > 0) // atleast one of the sensor was reporting an active state.
-//  {
-//    //timeElapsed=millis(); // Set this to current milliseconds time
-//    humanDetected = true; //Set variable to true;
-//    //startedSince=millis();// Set this to current milliseconds time
-//  }
-//
-//
-//  if (humanDetected)
-//  {
-//    lightsOn = true;
-//    startLEDSequence(); //do this till twenty seconds
-//
-//  }
-//  else
-//  {
-//
-//    if (lightsOn) // So that we turn off the lights only once.
-//    {
-//      shutDownLights();
-//      lightsOn = false;
-//    }
-//  }
-//}
-RS485 myRS485;
-void loop()
+void f_RS485_CommandCheck()
 {
-  myRS485.resetRS485SendingPacket();
-  myRS485.setSendingArrayData(0,RS485_KEEP_ALIVE,0);  
-  myRS485.sendRS485Packet();
-}
-
-
-void startLEDSequence()
-{
-  if (millis() - timeElapsed >= waitTime)
+  myRS485.recieveRS485Packet();
+  if (myRS485.getAmIAddressed())// this means the packet is intended for me. 
   {
-    timeElapsed = millis(); //Save the current time
-    digitalWrite(LED_PINS[LEDSequenceIndex], LOW); //Set the LED in sequence to low, this will turn it off. the current LEd has stayed on for "waitTime' milliseconds
-    LEDSequenceIndex = LEDSequenceIndex + 1; //increment LEDSequenceIndex by 1
-    LEDSequenceIndex = LEDSequenceIndex % LED_COUNT; // Limit the sequence index to less than the number of LED's in the system.
-    digitalWrite(LED_PINS[LEDSequenceIndex], HIGH); //Set the next LED in sequence to high, this will turn it on.
-    debugLEDstate = !debugLEDstate;
-    digitalWrite(LED_BUILTIN, debugLEDstate);
+    t_RS485_Send_Command.enable(); // enable the Task that sends the response, respond by sending an appropriate message
   }
-
-}
-
-void shutDownLights()
-{
-
-  for (loopIndex = 0; loopIndex < LED_COUNT; loopIndex++)
+  else
   {
-    digitalWrite(LED_PINS[loopIndex], LOW);
+    t_RS485_Send_Command.disable();// dont respond
   }
 }
-
-
-void turnOnAlarm() //alarm can only be sounded if both a person and a train is present
+void f_RS485_CommandSend()
 {
-  if (humanDetected && trainDetected)
-  {
-    digitalWrite(ALARM_PIN, HIGH);
-  }
 
 }
