@@ -100,7 +100,9 @@ void setup() {
 RS485 myRS485;
 void loop()
 {
-  myRS485.setRS485Mode(1);
+  myRS485.resetRS485SendingPacket();
+  myRS485.setSendingArrayData(0,RS485_KEEP_ALIVE,0);  
+  myRS485.sendRS485Packet();
 }
 
 
