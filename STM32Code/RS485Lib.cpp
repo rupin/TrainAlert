@@ -11,11 +11,7 @@
 #define SLAVE_ROLE 0
 
 
-<<<<<<< HEAD
 //#define MASTER_RS485_ADDRESS 0
-=======
-#define MASTER_RS485_ADDRESS 0
->>>>>>> 09cd5fffcd983c165a5e5fa0fc6d5c30f646fc3c
 #define MY_RS485_ADDRESS 1
 #define RS485_PACKET_SIZE 11
 
@@ -27,18 +23,11 @@
 
 
 #define PACKET_BYTE_UNSET_VALUE 0 //When data in arrays in unset, it will be this value
-<<<<<<< HEAD
 #define DESTINATION_BYTE_INDEX 3 //Index of the byte in the array which points to recipient address
 #define SOURCE_BYTE_INDEX 2 //Index of the byte in the array which points to recipient address
 #define COMMAND_BYTE_INDEX 4 //Index of the byte in the array which points to command
 #define FIRST_DATA_BYTE 5 //Index of the byte in the array which points to FIRST DATA BYTE
 
-=======
-#define DESTINATION_BYTE_INDEX 3 //Index of the bytein the arraywhich points to recipient address
-#define SOURCE_BYTE_INDEX 2 //Index of the bytein the arraywhich points to recipient address
-#define COMMAND_BYTE_INDEX 4 //Index of the bytein the arraywhich points to command
-#define FIRST_DATA_BYTE 5 //Index of the bytein the array which points to FIRST DATA BYTE
->>>>>>> 09cd5fffcd983c165a5e5fa0fc6d5c30f646fc3c
 
 
 #define RS485_SLAVE_SENSOR_STATUS 0x01 //Combined Report for Sensor Status, Battery and Ambient Temperature 
@@ -69,19 +58,11 @@ class RS485
     HardwareSerial RS485Port = new HardwareSerial(USART3);
     uint8_t amIAddressed;
     boolean isMaster=false;
-<<<<<<< HEAD
 
     uint8_t sourceAddress, rs485Command, destinationAddress;
     uint32_t recievedData;
     
 
-=======
-
-    uint8_t sourceAddress, rs485Command;
-    uint32_t recievedData;
-    
-
->>>>>>> 09cd5fffcd983c165a5e5fa0fc6d5c30f646fc3c
     
 
     uint8_t isThePacketforMe()//check if the destination Address belongs to me
@@ -164,10 +145,7 @@ class RS485
         recievedData=recievedData | RS485_RECIEVING_PAYLOAD[FIRST_DATA_BYTE+3];       
         
       }
-<<<<<<< HEAD
       
-=======
->>>>>>> 09cd5fffcd983c165a5e5fa0fc6d5c30f646fc3c
     }
 
     void setRS485SendingPacketByte(uint8_t index, uint8_t value)
@@ -199,11 +177,7 @@ class RS485
 
     void setSendingArrayData(uint8_t recipientAddress, uint8_t Command, uint32_t data)
     {
-<<<<<<< HEAD
       destinationAddress=recipientAddress;
-=======
-      
->>>>>>> 09cd5fffcd983c165a5e5fa0fc6d5c30f646fc3c
       uint8_t maskedByte=0;
       setRS485SendingPacketByte(0, 0x00);
       setRS485SendingPacketByte(1, 0x08);
@@ -241,10 +215,7 @@ class RS485
     {
       return recievedData;
     }
-<<<<<<< HEAD
    
-=======
->>>>>>> 09cd5fffcd983c165a5e5fa0fc6d5c30f646fc3c
     
     
 
