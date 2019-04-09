@@ -1,8 +1,9 @@
 
-#include "RS485Lib.cpp"
+#include "RS485.cpp"
 #include <TaskScheduler.h>
 #include "LightController.cpp"
 #include "PresenceSensor.cpp"
+#include "Node.cpp"
 
 
 #define ALARM_PIN PB14
@@ -13,19 +14,20 @@
 #define SensorCheckPeriod 1000
 
 
-#define SlaveRS485CommandCheckPeriod 500
+#define SlaveRS485CommandCheckPeriod 100
 #define SlaveRS485CommandSendPeriod 500
 
 #define MasterRS485SlaveAckowledgeCheck 100
-#define MasterRS485DataRequestPeriod 100
+#define MasterRS485DataRequestPeriod 10000
 
-//The operational Phases a Master can be in.
-#define SLAVE_ENUMERATION_PHASE 0
+#define NUMBER_OF_SLAVE_DEVICES 4
 
-uint8_t numberOfSlaveDevices = 0;
-uint8_t currentQueriedSlaveAddress = 0;
 #define SENSOR_QUERY_PHASE 1
-uint8_t currentPhase = SLAVE_ENUMERATION_PHASE;
+
+
+uint8_t currentQueriedSlaveAddress = 0;
+uint8_t currentPhase = SENSOR_QUERY_PHASE;
+Node slaveNode[NUMBER_OF_SLAVE_DEVICES];
 
 
 //Common Task List between Slave and Master
@@ -63,13 +65,16 @@ void setup() {
 
   pinMode(MASTER_SLAVE_PIN, INPUT);
   Serial.begin(115200);
-
+  HardwareSerial SerialObject(USART3);
+  myRS485.initClassObject(SerialObject);
   pinMode(ALARM_PIN, OUTPUT);
   role = digitalRead(MASTER_SLAVE_PIN);
   myRS485.setMasterSlaveStatus(role);
 
   if (role == SLAVE_ROLE) // Defined in RS485Lib
   {
+    Serial.print("I am a Slave with Address: ");
+    Serial.println(MY_RS485_ADDRESS);
     runner.addTask(t_SensorCheck);
     t_SensorCheck.enable();
 
@@ -84,6 +89,9 @@ void setup() {
 
   if (role == MASTER_ROLE) // Defined in RS485Lib
   {
+    Serial.print("I am a Master with Address: ");
+    Serial.println(MY_RS485_ADDRESS);
+    runner.addTask(t_SensorCheck);
     runner.addTask(t_SensorCheck);
     t_SensorCheck.enable();
 
@@ -98,23 +106,13 @@ void setup() {
 
   }
 
-
-
-
-
-
-
-
-
-
-
 }
 
 
 
 void loop()
 {
-
+  t_RS485_Request_Slave_Data.enable();
   runner.execute();
 }
 
@@ -139,20 +137,21 @@ void f_LEDExecuteOnSensor()
 
 void f_RS485_Process_Master_Sent_Command()
 {
+  //Serial.println("Waiting for Request");
   myRS485.recieveRS485Packet();// This just checks if a packet is recieved, and it is addressed to me.
-  if (myRS485.getAmIAddressed())// this means the packet is intended for me.
+  //Serial.println(myRS485.getAmIAddressed());
+  if (myRS485.getAmIAddressed() == RECIEVED_DATA_FOR_ME) // this means the packet is intended for me.
   {
-    t_RS485_Send_Slave_Response.enable(); // enable the Task that sends the response, respond by sending an appropriate message
+    t_RS485_Send_Slave_Response.enable();
+    t_RS485_Send_Slave_Response.restart(); // enable the Task that sends the response, respond by sending an appropriate message
   }
-  else
-  {
-    t_RS485_Send_Slave_Response.disable();// dont respond
-  }
+
 }
 
 
 void f_RS485_Send_Slave_Response()
 {
+  Serial.println("Responding");
   uint8_t destinationAdd = myRS485.getSourceAddress(); //When sending, the source which sent now becomes the destination
   uint8_t commandRecieved = myRS485.getCommand();
   uint32_t dataToBeSent = 0;
@@ -167,13 +166,13 @@ void f_RS485_Send_Slave_Response()
       batteryState = 33;
       temperature = 25;
 
-      dataToBeSent = (dataToBeSent | sensorStatus);
+      dataToBeSent = dataToBeSent + sensorStatus;
       dataToBeSent = dataToBeSent << 8;
-      dataToBeSent = (dataToBeSent | batteryState);
+      dataToBeSent = (dataToBeSent + batteryState);
       dataToBeSent = dataToBeSent << 8;
-      dataToBeSent = (dataToBeSent | temperature);
+      dataToBeSent = (dataToBeSent + temperature);
 
-      myRS485.setSendingArrayData(destinationAdd, RS485_SLAVE_SENSOR_STATUS, dataToBeSent);
+      myRS485.setSendingArrayData(destinationAdd, RS485_SLAVE_SENSOR_STATUS, 8473);
       myRS485.sendRS485Packet();
       break;
 
@@ -208,26 +207,46 @@ void f_RS485_Send_Slave_Response()
 void f_RS485_Request_Slave_Data()
 {
   if (SENSOR_QUERY_PHASE)
-    currentQueriedSlaveAddress = currentQueriedSlaveAddress + 1;
-  if (currentQueriedSlaveAddress > numberOfSlaveDevices)
   {
-    currentQueriedSlaveAddress = 1;
+    currentQueriedSlaveAddress = currentQueriedSlaveAddress + 1;
+    if (currentQueriedSlaveAddress > NUMBER_OF_SLAVE_DEVICES)
+    {
+      //We have checked up on every slave and updated the slave object array. 
+      //Let us analyse the data recieved from Slaves which are alive
+      //Basically, let us enable a task which will do the analysis
+      //this is also the right place to switch phases.
+      currentQueriedSlaveAddress = 1;
+    }
+    
+    uint32_t dataToBeSent = 0;
+    myRS485.setSendingArrayData(currentQueriedSlaveAddress, RS485_SLAVE_SENSOR_STATUS, dataToBeSent);
+    myRS485.sendRS485Packet();
   }
-  uint32_t dataToBeSent = 0;
-  myRS485.setSendingArrayData(currentQueriedSlaveAddress, RS485_SLAVE_SENSOR_STATUS, dataToBeSent);
-  myRS485.sendRS485Packet();
 
 
 }
 
 void f_RS485_Process_Slave_Ack()
 {
-  if (currentPhase == SLAVE_ENUMERATION_PHASE)
+
+  if (currentPhase == SENSOR_QUERY_PHASE)
   {
     myRS485.recieveRS485Packet();// This just checks if a packet is recieved, and it is addressed to me.
+    slaveNode[currentQueriedSlaveAddress].setAliveStatus(false); // Set it to false, if the response comes it will set itself to true.
     if (myRS485.getAmIAddressed())// this means the packet is intended for me.
     {
-      t_RS485_Request_Slave_Data.enable(); // enable the Task that sends the response, respond by sending an appropriate message
+      uint8_t sourceAddress = myRS485.getSourceAddress();
+      if (sourceAddress == currentQueriedSlaveAddress)
+      {
+        //currentQueriedSlaveAddress-1 becuse array starts at 0, but slave addressing starts at 1, because Master Node is 
+        slaveNode[currentQueriedSlaveAddress-1].setAliveStatus(true);//coz it responded         
+        slaveNode[currentQueriedSlaveAddress-1].setBatteryHealth(myRS485.getData(BATTERY_HEALTH_INDEX));
+        slaveNode[currentQueriedSlaveAddress-1].setPIRStatus(myRS485.getData(PIR_STATUS_INDEX));
+        slaveNode[currentQueriedSlaveAddress-1].setTemperature(myRS485.getData(TEMPERATURE_BYTE_INDEX));
+        t_RS485_Request_Slave_Data.enable();
+        t_RS485_Request_Slave_Data.restart();
+      }
+
     }
     else
     {

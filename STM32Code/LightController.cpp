@@ -20,7 +20,7 @@ class LightController
       {
         pinMode(LED_PINS[loopIndex], OUTPUT);
       }
-      pinMode(LED_BUILTIN, OUTPUT);
+      //pinMode(LED_BUILTIN, OUTPUT);
     }
 
     void turnOnLED()
@@ -30,7 +30,7 @@ class LightController
         currentLEDIndex = currentLEDIndex % LED_COUNT; // Limit the sequence index to less than the number of LED's in the system.
         digitalWrite(LED_PINS[currentLEDIndex], HIGH); //Set the next LED in sequence to high, this will turn it on.
         debugLEDstate = !debugLEDstate;
-        digitalWrite(LED_BUILTIN, debugLEDstate);
+        //digitalWrite(LED_BUILTIN, debugLEDstate);
         lightsOn=true;      
     }
 
@@ -48,7 +48,7 @@ class LightController
       {
         digitalWrite(LED_PINS[loopIndex], LOW);
       }
-      digitalWrite(LED_BUILTIN, HIGH);// BuiltIn LED is Active Low
+      //digitalWrite(LED_BUILTIN, HIGH);// BuiltIn LED is Active Low
       lightsOn=false;
     }
 
