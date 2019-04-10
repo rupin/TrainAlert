@@ -14,15 +14,16 @@
 #define SensorCheckPeriod 1000
 
 
-#define SlaveRS485CommandCheckPeriod 100
-#define SlaveRS485CommandSendPeriod 500
+#define SlaveRS485CommandCheckPeriod 50
+#define SlaveRS485CommandSendPeriod 50
 
 #define MasterRS485SlaveAckowledgeCheck 100
-#define MasterRS485DataRequestPeriod 1000
+#define MasterRS485DataRequestPeriod 50
 
 #define NUMBER_OF_SLAVE_DEVICES 4
-#define SENSOR_QUERY_PHASE 1
-#define DEAD_SLAVE_TIMEOUT 5000
+#define SENSOR_QUERY_PHASE 0x01
+#define RADIO_STATUS_PHASE 0X02
+#define DEAD_SLAVE_TIMEOUT 2500
 
 uint32_t MasterRequestedDataTimeStamp=millis();
 
@@ -214,20 +215,18 @@ void f_RS485_Send_Slave_Response()
 
 void f_RS485_Request_Slave_Data()
 {
-  if (SENSOR_QUERY_PHASE)
-  {
-    currentQueriedSlaveAddress = currentQueriedSlaveAddress + 1;
-    if (currentQueriedSlaveAddress > NUMBER_OF_SLAVE_DEVICES)
-    {
-      //We have checked up on every slave and updated the slaveNode object array.
-      //Let us analyse the data recieved from Slaves which are alive
-      //Basically, let us enable a task which will do the analysis
-      //this is also the right place to switch phases.
-      currentQueriedSlaveAddress = 1;
-    }
-
+  currentQueriedSlaveAddress=getNextSlaveID(currentQueriedSlaveAddress);
+  if (currentPhase==SENSOR_QUERY_PHASE)
+  {   
     uint32_t dataToBeSent = 0;
     myRS485.setSendingArrayData(currentQueriedSlaveAddress, RS485_SLAVE_SENSOR_STATUS, dataToBeSent);
+    myRS485.sendRS485Packet();
+    MasterRequestedDataTimeStamp=millis();
+  }
+  if (currentPhase==RADIO_STATUS_PHASE)
+  {   
+    uint32_t dataToBeSent = 0;
+    myRS485.setSendingArrayData(currentQueriedSlaveAddress, RS485_RADIO_STATUS, dataToBeSent);
     myRS485.sendRS485Packet();
     MasterRequestedDataTimeStamp=millis();
   }
@@ -237,9 +236,27 @@ void f_RS485_Request_Slave_Data()
 
 void f_RS485_Process_Slave_Ack()
 {
-
+  boolean  SensorQueryPhaseStatus;
   if (currentPhase == SENSOR_QUERY_PHASE)
   {
+    SensorQueryPhaseStatus=SensorQueryPhaseHandler();
+    if(SensorQueryPhaseStatus)
+    {
+        t_RS485_Request_Slave_Data.enable();
+        t_RS485_Request_Slave_Data.restart();
+    }
+    else
+    {
+      t_RS485_Request_Slave_Data.disable();
+      
+    }
+  }
+
+  
+}
+
+boolean SensorQueryPhaseHandler()
+{
     myRS485.recieveRS485Packet();// This just checks if a packet is recieved, and it is addressed to me.
     slaveNode[currentQueriedSlaveAddress].setAliveStatus(false); // Set it to false, if the response comes it will set itself to true.
     if (myRS485.getAmIAddressed())// this means the packet is intended for me.
@@ -255,8 +272,8 @@ void f_RS485_Process_Slave_Ack()
         Serial.print("Slave Number ");
         Serial.print(currentQueriedSlaveAddress);
         Serial.println(" responded.");
-        t_RS485_Request_Slave_Data.enable();
-        t_RS485_Request_Slave_Data.restart();
+        return true;
+        
       }
 
     }
@@ -266,12 +283,41 @@ void f_RS485_Process_Slave_Ack()
       Serial.print(currentQueriedSlaveAddress);
       Serial.println(" has timed out.");
       
-      t_RS485_Request_Slave_Data.enable();
-      t_RS485_Request_Slave_Data.restart();
+     return true;
     }
     else 
     {
-      t_RS485_Request_Slave_Data.disable();// dont respond
+      return false;
     }
-  }
+  
+}
+
+uint8_t getNextSlaveID(uint8_t l_currentSlaveID)
+{
+    uint8_t returnSlaveID;
+    returnSlaveID = l_currentSlaveID + 1;
+    if (returnSlaveID > NUMBER_OF_SLAVE_DEVICES)
+    {
+      //We have checked up on every slave and updated the slaveNode object array.
+      //Let us analyse the data recieved from Slaves which are alive
+      //Basically, let us enable a task which will do the analysis
+      //this is also the right place to switch phases.
+      returnSlaveID = 1;
+      currentPhase=getNextPhase(currentPhase);
+      
+    }
+    return returnSlaveID;
+}
+
+uint8_t getNextPhase(uint8_t l_currentPhase)
+{
+  
+  if(l_currentPhase==SENSOR_QUERY_PHASE)
+  {
+    return RADIO_STATUS_PHASE;
+   }
+   else
+   {
+      return SENSOR_QUERY_PHASE;
+   }
 }
