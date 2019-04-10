@@ -12,7 +12,7 @@
 
 
 //#define MASTER_RS485_ADDRESS 0
-#define MY_RS485_ADDRESS 2
+#define MY_RS485_ADDRESS 0
 #define RS485_PACKET_SIZE 11
 #define RS485_DATA_SIZE 4
 
@@ -139,11 +139,11 @@ class RS485
       //It is possible the function call can happen while the packet is in transit.
       //We should only read in data lengths equal to RS485_PACKET_SIZE
       uint8_t bufferLength = RS485Port.available();
-      Serial.print("BufferLength: ");
-      Serial.println(bufferLength);
+      //Serial.print("BufferLength: ");
+      //Serial.println(bufferLength);
       if (bufferLength >= RS485_PACKET_SIZE)
       {
-        Serial.println("I recieved 11 Bytes");  
+        //Serial.println("I recieved 11 Bytes");  
         //RS485Port.readBytes(RS485_RECIEVING_PAYLOAD, RS485_PACKET_SIZE);
         uint8_t readingIndex = 0;
         while (readingIndex < RS485_PACKET_SIZE)
@@ -152,8 +152,8 @@ class RS485
           readingIndex = readingIndex + 1;
 
         }
-        Serial.write(RS485_RECIEVING_PAYLOAD, RS485_PACKET_SIZE);
-        Serial.flush();
+        //Serial.write(RS485_RECIEVING_PAYLOAD, RS485_PACKET_SIZE);
+        //Serial.flush();
 
         amIAddressed = isThePacketforMe(); //Determine if I am the intended recipient or
         if (amIAddressed == RECIEVED_DATA_FOR_ME) //If I am the recipent, better collect the source of the packet, the command and the data.

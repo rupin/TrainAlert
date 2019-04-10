@@ -24,6 +24,7 @@
 #define SENSOR_QUERY_PHASE 1
 #define DEAD_SLAVE_TIMEOUT 5000
 
+uint32_t MasterRequestedDataTimeStamp=millis();
 
 uint8_t currentQueriedSlaveAddress = 0;
 uint8_t currentPhase = SENSOR_QUERY_PHASE;
@@ -228,6 +229,7 @@ void f_RS485_Request_Slave_Data()
     uint32_t dataToBeSent = 0;
     myRS485.setSendingArrayData(currentQueriedSlaveAddress, RS485_SLAVE_SENSOR_STATUS, dataToBeSent);
     myRS485.sendRS485Packet();
+    MasterRequestedDataTimeStamp=millis();
   }
 
 
@@ -250,12 +252,24 @@ void f_RS485_Process_Slave_Ack()
         slaveNode[currentQueriedSlaveAddress - 1].setBatteryHealth(myRS485.getData(BATTERY_HEALTH_INDEX));
         slaveNode[currentQueriedSlaveAddress - 1].setPIRStatus(myRS485.getData(PIR_STATUS_INDEX));
         slaveNode[currentQueriedSlaveAddress - 1].setTemperature(myRS485.getData(TEMPERATURE_BYTE_INDEX));
+        Serial.print("Slave Number ");
+        Serial.print(currentQueriedSlaveAddress);
+        Serial.println(" responded.");
         t_RS485_Request_Slave_Data.enable();
         t_RS485_Request_Slave_Data.restart();
       }
 
     }
-    else
+    else if(millis()-MasterRequestedDataTimeStamp>DEAD_SLAVE_TIMEOUT)
+    {
+      Serial.print("Slave Number ");
+      Serial.print(currentQueriedSlaveAddress);
+      Serial.println(" has timed out.");
+      
+      t_RS485_Request_Slave_Data.enable();
+      t_RS485_Request_Slave_Data.restart();
+    }
+    else 
     {
       t_RS485_Request_Slave_Data.disable();// dont respond
     }
