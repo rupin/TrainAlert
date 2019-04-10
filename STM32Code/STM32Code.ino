@@ -18,16 +18,18 @@
 #define SlaveRS485CommandSendPeriod 500
 
 #define MasterRS485SlaveAckowledgeCheck 100
-#define MasterRS485DataRequestPeriod 10000
+#define MasterRS485DataRequestPeriod 1000
 
 #define NUMBER_OF_SLAVE_DEVICES 4
-
 #define SENSOR_QUERY_PHASE 1
+#define DEAD_SLAVE_TIMEOUT 5000
 
 
 uint8_t currentQueriedSlaveAddress = 0;
 uint8_t currentPhase = SENSOR_QUERY_PHASE;
 Node slaveNode[NUMBER_OF_SLAVE_DEVICES];
+
+
 
 
 //Common Task List between Slave and Master
@@ -41,6 +43,7 @@ void f_RS485_Process_Slave_Ack();
 void f_RS485_Request_Slave_Data();
 Task t_RS485_Request_Slave_Data(MasterRS485DataRequestPeriod, 1, &f_RS485_Request_Slave_Data); //Should happen only once
 Task t_RS485_Process_Slave_Ack(MasterRS485SlaveAckowledgeCheck, TASK_FOREVER, &f_RS485_Process_Slave_Ack);
+Task t_RS485_Slave_Dead_TimeOut(3000, TASK_FOREVER, &f_RS485_Process_Slave_Ack);
 
 
 
@@ -142,6 +145,7 @@ void f_RS485_Process_Master_Sent_Command()
   //Serial.println(myRS485.getAmIAddressed());
   if (myRS485.getAmIAddressed() == RECIEVED_DATA_FOR_ME) // this means the packet is intended for me.
   {
+    Serial.println("I am Addressed");
     t_RS485_Send_Slave_Response.enable();
     t_RS485_Send_Slave_Response.restart(); // enable the Task that sends the response, respond by sending an appropriate message
   }
@@ -154,6 +158,8 @@ void f_RS485_Send_Slave_Response()
   Serial.println("Responding");
   uint8_t destinationAdd = myRS485.getSourceAddress(); //When sending, the source which sent now becomes the destination
   uint8_t commandRecieved = myRS485.getCommand();
+  Serial.println(destinationAdd);
+
   uint32_t dataToBeSent = 0;
   uint8_t sensorStatus ;
   uint8_t batteryState ;
@@ -161,6 +167,7 @@ void f_RS485_Send_Slave_Response()
   switch (commandRecieved)
   {
     case RS485_SLAVE_SENSOR_STATUS:
+      Serial.println("RS485_SLAVE_SENSOR_STATUS");
       dataToBeSent = 0;
       sensorStatus = myPresenceSensor.getPIRStatus();
       batteryState = 33;
@@ -211,13 +218,13 @@ void f_RS485_Request_Slave_Data()
     currentQueriedSlaveAddress = currentQueriedSlaveAddress + 1;
     if (currentQueriedSlaveAddress > NUMBER_OF_SLAVE_DEVICES)
     {
-      //We have checked up on every slave and updated the slave object array. 
+      //We have checked up on every slave and updated the slaveNode object array.
       //Let us analyse the data recieved from Slaves which are alive
       //Basically, let us enable a task which will do the analysis
       //this is also the right place to switch phases.
       currentQueriedSlaveAddress = 1;
     }
-    
+
     uint32_t dataToBeSent = 0;
     myRS485.setSendingArrayData(currentQueriedSlaveAddress, RS485_SLAVE_SENSOR_STATUS, dataToBeSent);
     myRS485.sendRS485Packet();
@@ -238,11 +245,11 @@ void f_RS485_Process_Slave_Ack()
       uint8_t sourceAddress = myRS485.getSourceAddress();
       if (sourceAddress == currentQueriedSlaveAddress)
       {
-        //currentQueriedSlaveAddress-1 becuse array starts at 0, but slave addressing starts at 1, because Master Node is 
-        slaveNode[currentQueriedSlaveAddress-1].setAliveStatus(true);//coz it responded         
-        slaveNode[currentQueriedSlaveAddress-1].setBatteryHealth(myRS485.getData(BATTERY_HEALTH_INDEX));
-        slaveNode[currentQueriedSlaveAddress-1].setPIRStatus(myRS485.getData(PIR_STATUS_INDEX));
-        slaveNode[currentQueriedSlaveAddress-1].setTemperature(myRS485.getData(TEMPERATURE_BYTE_INDEX));
+        //currentQueriedSlaveAddress-1 becuse array starts at 0, but slave addressing starts at 1, because Master Node is
+        slaveNode[currentQueriedSlaveAddress - 1].setAliveStatus(true); //coz it responded
+        slaveNode[currentQueriedSlaveAddress - 1].setBatteryHealth(myRS485.getData(BATTERY_HEALTH_INDEX));
+        slaveNode[currentQueriedSlaveAddress - 1].setPIRStatus(myRS485.getData(PIR_STATUS_INDEX));
+        slaveNode[currentQueriedSlaveAddress - 1].setTemperature(myRS485.getData(TEMPERATURE_BYTE_INDEX));
         t_RS485_Request_Slave_Data.enable();
         t_RS485_Request_Slave_Data.restart();
       }
