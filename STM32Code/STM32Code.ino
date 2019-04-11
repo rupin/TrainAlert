@@ -225,7 +225,7 @@ void f_RS485_Request_Slave_Data()
   }
   if (currentPhase==RADIO_STATUS_PHASE)
   {   
-    uint32_t dataToBeSent = 0;
+    uint32_t dataToBeSent = 48;
     myRS485.setSendingArrayData(currentQueriedSlaveAddress, RS485_RADIO_STATUS, dataToBeSent);
     myRS485.sendRS485Packet();
     MasterRequestedDataTimeStamp=millis();
@@ -238,6 +238,21 @@ void f_RS485_Process_Slave_Ack()
 {
   boolean  SensorQueryPhaseStatus;
   if (currentPhase == SENSOR_QUERY_PHASE)
+  {
+    SensorQueryPhaseStatus=SensorQueryPhaseHandler();
+    if(SensorQueryPhaseStatus)
+    {
+        t_RS485_Request_Slave_Data.enable();
+        t_RS485_Request_Slave_Data.restart();
+    }
+    else
+    {
+      t_RS485_Request_Slave_Data.disable();
+      
+    }
+  }
+
+  if (currentPhase == RADIO_STATUS_PHASE)
   {
     SensorQueryPhaseStatus=SensorQueryPhaseHandler();
     if(SensorQueryPhaseStatus)
